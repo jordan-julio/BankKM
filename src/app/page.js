@@ -120,7 +120,7 @@ export default function App() {
     formData.append('file', excelFile);
 
     try {
-      const response = await fetch('http://localhost:8000/sheet_info/', {
+      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/sheet_info/', {
         method: 'POST',
         body: formData,
       });
@@ -173,7 +173,7 @@ export default function App() {
       formData.append('file', file);
       formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-      const response = await fetch('http://localhost:8000/ids/', {
+      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/ids/', {
         method: 'POST',
         body: formData,
       });
@@ -219,7 +219,7 @@ export default function App() {
     formData.append('id', id);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('http://localhost:8000/preview/', {
+    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/preview/', {
       method: 'POST',
       body: formData,
     });
@@ -236,7 +236,7 @@ export default function App() {
     formData.append('file', file);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('http://localhost:8000/generate_all/', {
+    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/generate_all/', {
       method: 'POST',
       body: formData,
     });
@@ -256,7 +256,7 @@ export default function App() {
     formData.append('file', file);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('http://localhost:8000/download_combined/', {
+    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/download_combined/', {
       method: 'POST',
       body: formData,
     });
