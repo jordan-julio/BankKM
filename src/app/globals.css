@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import 'react-pdf/dist/esm/Page/TextLayer.css';
+@import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 
 :root {
   --background: #ffffff;
@@ -14,8 +16,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #fff;
+    --foreground: #fff;
   }
 }
 
@@ -23,4 +25,26 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-black;
+}
+
+/* Custom styles for scroll animations */
+.scroll-indicator {
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(10px);
+  }
 }

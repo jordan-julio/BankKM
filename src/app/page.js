@@ -1,103 +1,508 @@
-import Image from "next/image";
+'use client';
+import React, { useState, useMemo } from 'react';
 
-export default function Home() {
+// Mock PdfPreview component for demo
+const PdfPreview = ({ url }) => (
+  <div className="w-full h-screen bg-gray-100 flex items-center justify-center">
+    <iframe src={url} className="w-full h-full border-0" />
+  </div>
+);
+
+// Searchable dropdown component
+const SearchableDropdown = ({ 
+  options, 
+  value, 
+  onChange, 
+  placeholder = "Search...",
+  className = ""
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm) return options;
+    return options.filter(option => 
+      option.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [options, searchTerm]);
+
+  const handleSelect = (option) => {
+    onChange(option);
+    setSearchTerm('');
+    setIsOpen(false);
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <div className={`relative ${className}`}>
+      <div className="relative">
+        <input
+          type="text"
+          value={value || searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={placeholder}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+      
+      {isOpen && (
+        <>
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-gray-500">No results found</div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option}
+                  onClick={() => handleSelect(option)}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                >
+                  {option}
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+export default function App() {
+  const [file, setFile] = useState(null);
+  const [ids, setIds] = useState([]);
+  const [sheets, setSheets] = useState([]);
+  const [availableSheets, setAvailableSheets] = useState([]);
+  const [selectedSheets, setSelectedSheets] = useState([]);
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL', 'BK', 'BM', 'BMM', 'B2K', etc.
+  const [selectedId, setSelectedId] = useState('');
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Get unique ID prefixes from the IDs
+  const availableTypes = useMemo(() => {
+    const prefixes = new Set(['ALL']);
+    ids.forEach(id => {
+      // Extract prefix (letters at the start)'^B[A-Z0-9]+'
+      const match = id.match(/^B[A-Z0-9]+/);
+      if (match) {
+        prefixes.add(match[0]);
+      }
+    });
+    return Array.from(prefixes).sort();
+  }, [ids]);
+
+  // Filter IDs based on selected type
+  const filteredIds = useMemo(() => {
+    if (selectedType === 'ALL') return ids;
+    return ids.filter(id => id.startsWith(selectedType));
+  }, [ids, selectedType]);
+
+  // Get sheet information
+  async function getSheetInfo(excelFile) {
+    const formData = new FormData();
+    formData.append('file', excelFile);
+
+    try {
+      const response = await fetch('http://localhost:8000/sheet_info/', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      return data.sheets || [];
+    } catch (error) {
+      console.error('Error getting sheet info:', error);
+      return [];
+    }
+  }
+
+  // Upload Excel and get sheet info first
+  async function handleFileUpload(e) {
+    const excelFile = e.target.files[0];
+    if (!excelFile) return;
+    
+    setFile(excelFile);
+    setPdfUrl(null);
+    setSelectedId('');
+    setIds([]);
+    setSheets([]);
+    setSelectedSheets([]);
+    setLoading(true);
+
+    try {
+      // First get sheet information
+      const sheetInfo = await getSheetInfo(excelFile);
+      setAvailableSheets(sheetInfo);
+      
+      // Auto-select all readable sheets by default
+      const readableSheets = sheetInfo
+        .filter(sheet => sheet.status === 'readable')
+        .map(sheet => sheet.name);
+      setSelectedSheets(readableSheets);
+      
+    } catch (error) {
+      console.error('Error processing file:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Process selected sheets to get IDs
+  async function processSelectedSheets() {
+    if (!file || selectedSheets.length === 0) return;
+    
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('selected_sheets', JSON.stringify(selectedSheets));
+
+      const response = await fetch('http://localhost:8000/ids/', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      setIds(data.ids);
+      setSheets(data.sheets || []);
+    } catch (error) {
+      console.error('Error processing sheets:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Handle sheet selection changes
+  const handleSheetToggle = (sheetName) => {
+    setSelectedSheets(prev => {
+      if (prev.includes(sheetName)) {
+        return prev.filter(name => name !== sheetName);
+      } else {
+        return [...prev, sheetName];
+      }
+    });
+  };
+
+  const selectAllSheets = () => {
+    const readableSheets = availableSheets
+      .filter(sheet => sheet.status === 'readable')
+      .map(sheet => sheet.name);
+    setSelectedSheets(readableSheets);
+  };
+
+  const deselectAllSheets = () => {
+    setSelectedSheets([]);
+  };
+
+  // Preview selected ID
+  async function previewPdf(id) {
+    if (!file || !id || selectedSheets.length === 0) return;
+    setSelectedId(id);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('id', id);
+    formData.append('selected_sheets', JSON.stringify(selectedSheets));
+
+    const response = await fetch('http://localhost:8000/preview/', {
+      method: 'POST',
+      body: formData,
+    });
+    const blob = await response.blob();
+    const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+    const url = URL.createObjectURL(pdfBlob);
+    setPdfUrl(url);
+  }
+
+  // Download all PDFs
+  async function downloadAll() {
+    if (!file || selectedSheets.length === 0) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('selected_sheets', JSON.stringify(selectedSheets));
+
+    const response = await fetch('http://localhost:8000/generate_all/', {
+      method: 'POST',
+      body: formData,
+    });
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'BK_All_Files.zip';
+    link.click();
+  }
+
+  async function downloadAllAsOneFile() {
+    if (!file || selectedSheets.length === 0) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('selected_sheets', JSON.stringify(selectedSheets));
+
+    const response = await fetch('http://localhost:8000/download_combined/', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      console.error('Download failed:', response.statusText);
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'BK_Combined_File.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+  // Handle type change and reset selected ID
+  const handleTypeChange = (type) => {
+    setSelectedType(type);
+    setSelectedId('');
+    setPdfUrl(null);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 w-full">
+      <div className="w-full bg-white rounded-xl shadow-md overflow-visible">
+        {/* Header */}
+        <header className="px-6 py-4 border-b border-gray-200">
+          <h1 className="text-2xl font-semibold text-gray-800">
+            Bank Transaction PDF Generator
+          </h1>
+        </header>
+
+        {/* Content */}
+        <main className="p-6 space-y-6 w-full">
+          {/* File Upload */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <input
+              id="file-input"
+              type="file"
+              accept=".xlsx"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={loading}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            <label
+              htmlFor="file-input"
+              className={`px-4 py-2 rounded-lg shadow transition ${
+                loading 
+                  ? 'bg-gray-400 text-white cursor-not-allowed' 
+                  : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-700'
+              }`}
+            >
+              {loading ? 'Processing...' : 'Upload Excel File'}
+            </label>
+            {file && <span className="text-gray-600 truncate">{file.name}</span>}
+            {ids.length > 0 && (
+              <>
+                <button
+                  onClick={downloadAllAsOneFile}
+                  disabled={selectedSheets.length === 0}
+                  className={`ml-auto px-4 py-2 rounded-lg shadow transition ${
+                    selectedSheets.length === 0
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  Download All as One File
+                </button>
+                <button
+                  onClick={downloadAll}
+                  disabled={selectedSheets.length === 0}
+                  className={`ml-auto px-4 py-2 rounded-lg shadow transition ${
+                    selectedSheets.length === 0
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  Download All PDFs
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Sheet Selection */}
+          {availableSheets.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-800">Select Sheets to Process:</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={selectAllSheets}
+                    className="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={deselectAllSheets}
+                    className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {availableSheets.map((sheet) => (
+                  <label 
+                    key={sheet.name}
+                    className={`flex items-center p-3 rounded-lg border-2 cursor-pointer transition ${
+                      selectedSheets.includes(sheet.name)
+                        ? 'border-blue-500 bg-blue-50'
+                        : sheet.status === 'readable'
+                        ? 'border-gray-200 bg-white hover:border-gray-300'
+                        : 'border-red-200 bg-red-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSheets.includes(sheet.name)}
+                      onChange={() => handleSheetToggle(sheet.name)}
+                      disabled={sheet.status !== 'readable'}
+                      className="mr-3"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm text-gray-800">{sheet.name}</div>
+                      <div className={`text-xs ${
+                        sheet.status === 'readable' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {sheet.status === 'readable' ? 'Ready' : `Error: ${sheet.error}`}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-sm text-gray-600">
+                  {selectedSheets.length} of {availableSheets.length} sheets selected
+                </span>
+                <button
+                  onClick={processSelectedSheets}
+                  disabled={selectedSheets.length === 0 || loading}
+                  className={`px-4 py-2 rounded-lg shadow transition ${
+                    selectedSheets.length === 0 || loading
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {loading ? 'Processing...' : 'Process Selected Sheets'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Sheet Information */}
+          {sheets.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-medium text-blue-800 mb-2">Processed Sheets:</h3>
+              <div className="flex flex-wrap gap-2">
+                {sheets.map((sheet) => (
+                  <span 
+                    key={sheet.name}
+                    className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                  >
+                    {sheet.name} ({sheet.count} records)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Type Filter and ID Selector */}
+          {ids.length > 0 && (
+            <div className="space-y-4">
+              {/* Type Filter */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <label className="text-gray-700 font-medium">Filter by Type:</label>
+                <div className="flex flex-wrap gap-2">
+                  {availableTypes.map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => handleTypeChange(type)}
+                      className={`px-4 py-2 rounded-lg border transition ${
+                        selectedType === type
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-sm text-gray-500">
+                  ({filteredIds.length} items)
+                </span>
+              </div>
+
+              {/* ID Selector */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <label className="text-gray-700 font-medium w-full sm:w-auto">
+                  Select {selectedType === 'ALL' ? 'Transaction' : selectedType} ID:
+                </label>
+                <SearchableDropdown
+                  options={filteredIds}
+                  value={selectedId}
+                  onChange={previewPdf}
+                  placeholder={`Search ${selectedType === 'ALL' ? 'transaction' : selectedType} IDs...`}
+                  className="w-full sm:w-2/3"
+                />
+              </div>
+
+              {/* Selected ID Display */}
+              {selectedId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <span className="text-blue-800 font-medium">
+                    Selected: {selectedId}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PDF Preview */}
+          {pdfUrl && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <PdfPreview url={pdfUrl} />
+              <div className="p-4 bg-gray-50 text-right">
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  Open in New Tab
+                </a>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
