@@ -98,8 +98,8 @@ export default function App() {
 
   // File type options
   const fileTypeOptions = [
-    { value: 'bank', label: 'Bank Masuk/Bank Keluar', description: 'Traditional bank transaction format' },
-    { value: 'kas', label: 'Kas Masuk/Kas Keluar', description: 'Cash receipt/payment format' }
+    { value: 'bank', label: 'Bank Masuk/Bank Keluar', description: '' },
+    { value: 'kas', label: 'Kas Masuk/Kas Keluar', description: '' }
   ];
 
   // Get unique ID prefixes from the IDs based on file type
@@ -149,7 +149,7 @@ export default function App() {
     formData.append('file_type', fileType);
 
     try {
-      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/sheet_info/', {
+      const response = await fetch('http://localhost:8000/sheet_info/', {
         method: 'POST',
         body: formData,
       });
@@ -203,7 +203,7 @@ export default function App() {
       formData.append('file_type', fileType);
       formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/ids/', {
+      const response = await fetch('http://localhost:8000/ids/', {
         method: 'POST',
         body: formData,
       });
@@ -250,7 +250,7 @@ export default function App() {
     formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/preview/', {
+    const response = await fetch('http://localhost:8000/preview/', {
       method: 'POST',
       body: formData,
     });
@@ -268,7 +268,7 @@ export default function App() {
     formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/generate_all/', {
+    const response = await fetch('http://localhost:8000/generate_all/', {
       method: 'POST',
       body: formData,
     });
@@ -289,7 +289,7 @@ export default function App() {
     formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/download_combined/', {
+    const response = await fetch('http://localhost:8000/download_combined/', {
       method: 'POST',
       body: formData,
     });
@@ -324,10 +324,10 @@ export default function App() {
         {/* Header */}
         <header className="px-6 py-4 border-b border-gray-200">
           <h1 className="text-2xl font-semibold text-gray-800">
-            Transaction PDF Generator
+            Excel to PDF
           </h1>
           <p className="text-gray-600 mt-1">
-            Generate PDF forms for bank and cash transactions
+            Upload Excel convert to PDFs.
           </p>
         </header>
 
