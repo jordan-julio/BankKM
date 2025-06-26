@@ -86,27 +86,42 @@ const SearchableDropdown = ({
 
 export default function App() {
   const [file, setFile] = useState(null);
+  const [fileType, setFileType] = useState('bank'); // 'bank' or 'kas'
   const [ids, setIds] = useState([]);
   const [sheets, setSheets] = useState([]);
   const [availableSheets, setAvailableSheets] = useState([]);
   const [selectedSheets, setSelectedSheets] = useState([]);
-  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL', 'BK', 'BM', 'BMM', 'B2K', etc.
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL', 'BK', 'BM', 'KM', 'KK', etc.
   const [selectedId, setSelectedId] = useState('');
   const [pdfUrl, setPdfUrl] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Get unique ID prefixes from the IDs
+  // File type options
+  const fileTypeOptions = [
+    { value: 'bank', label: 'Bank Masuk/Bank Keluar', description: 'Traditional bank transaction format' },
+    { value: 'kas', label: 'Kas Masuk/Kas Keluar', description: 'Cash receipt/payment format' }
+  ];
+
+  // Get unique ID prefixes from the IDs based on file type
   const availableTypes = useMemo(() => {
     const prefixes = new Set(['ALL']);
     ids.forEach(id => {
-      // Extract prefix (letters at the start)'^B[A-Z0-9]+'
-      const match = id.match(/^B[A-Z0-9]+/);
-      if (match) {
-        prefixes.add(match[0]);
+      if (fileType === 'kas') {
+        // For Kas files, look for KM/KK prefixes
+        const match = id.match(/^(KM|KK)/);
+        if (match) {
+          prefixes.add(match[0]);
+        }
+      } else {
+        // For Bank files, look for B-prefixed entries
+        const match = id.match(/^B[A-Z0-9]+/);
+        if (match) {
+          prefixes.add(match[0]);
+        }
       }
     });
     return Array.from(prefixes).sort();
-  }, [ids]);
+  }, [ids, fileType]);
 
   // Filter IDs based on selected type
   const filteredIds = useMemo(() => {
@@ -114,10 +129,24 @@ export default function App() {
     return ids.filter(id => id.startsWith(selectedType));
   }, [ids, selectedType]);
 
+  // Reset state when file type changes
+  const handleFileTypeChange = (newFileType) => {
+    setFileType(newFileType);
+    setFile(null);
+    setIds([]);
+    setSheets([]);
+    setAvailableSheets([]);
+    setSelectedSheets([]);
+    setSelectedType('ALL');
+    setSelectedId('');
+    setPdfUrl(null);
+  };
+
   // Get sheet information
   async function getSheetInfo(excelFile) {
     const formData = new FormData();
     formData.append('file', excelFile);
+    formData.append('file_type', fileType);
 
     try {
       const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/sheet_info/', {
@@ -171,6 +200,7 @@ export default function App() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('file_type', fileType);
       formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
       const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/ids/', {
@@ -217,6 +247,7 @@ export default function App() {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('id', id);
+    formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
     const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/preview/', {
@@ -234,6 +265,7 @@ export default function App() {
     if (!file || selectedSheets.length === 0) return;
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
     const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/generate_all/', {
@@ -245,7 +277,7 @@ export default function App() {
 
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'BK_All_Files.zip';
+    link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_All_Files.zip`;
     link.click();
   }
 
@@ -254,6 +286,7 @@ export default function App() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('file_type', fileType);
     formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
     const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/download_combined/', {
@@ -270,7 +303,7 @@ export default function App() {
 
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'BK_Combined_File.pdf';
+    link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_Combined_File.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -291,12 +324,45 @@ export default function App() {
         {/* Header */}
         <header className="px-6 py-4 border-b border-gray-200">
           <h1 className="text-2xl font-semibold text-gray-800">
-            Bank Transaction PDF Generator
+            Transaction PDF Generator
           </h1>
+          <p className="text-gray-600 mt-1">
+            Generate PDF forms for bank and cash transactions
+          </p>
         </header>
 
         {/* Content */}
         <main className="p-6 space-y-6 w-full">
+          {/* File Type Selection */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h3 className="font-medium text-gray-800 mb-3">Select File Type:</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {fileTypeOptions.map((option) => (
+                <label 
+                  key={option.value}
+                  className={`flex items-start p-4 rounded-lg border-2 cursor-pointer transition ${
+                    fileType === option.value
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="fileType"
+                    value={option.value}
+                    checked={fileType === option.value}
+                    onChange={(e) => handleFileTypeChange(e.target.value)}
+                    className="mt-1 mr-3"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-800">{option.label}</div>
+                    <div className="text-sm text-gray-600 mt-1">{option.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* File Upload */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <input
@@ -315,9 +381,16 @@ export default function App() {
                   : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-700'
               }`}
             >
-              {loading ? 'Processing...' : 'Upload Excel File'}
+              {loading ? 'Processing...' : `Upload ${fileType === 'kas' ? 'Kas' : 'Bank'} Excel File`}
             </label>
-            {file && <span className="text-gray-600 truncate">{file.name}</span>}
+            {file && (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="text-gray-600 truncate">{file.name}</span>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  {fileType === 'kas' ? 'Kas Format' : 'Bank Format'}
+                </span>
+              </div>
+            )}
             {ids.length > 0 && (
               <>
                 <button
