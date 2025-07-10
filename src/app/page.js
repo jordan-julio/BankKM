@@ -1,5 +1,8 @@
 'use client';
 import React, { useState, useMemo } from 'react';
+import { downloadBlob, fetchIdsAndSheets, fetchPdfBlob } from './functions';
+import { AlertCircle, Check, Download, FileText, Filter, Search, Upload, Loader2, CreditCard, Wallet } from 'lucide-react';
+import { SearchableDropdown } from './components/SearchableDropdown';
 
 // Mock PdfPreview component for demo
 const PdfPreview = ({ url }) => (
@@ -8,78 +11,104 @@ const PdfPreview = ({ url }) => (
   </div>
 );
 
-// Searchable dropdown component
-const SearchableDropdown = ({ 
-  options, 
-  value, 
-  onChange, 
-  placeholder = "Search...",
-  className = ""
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-
-  const filteredOptions = useMemo(() => {
-    if (!searchTerm) return options;
-    return options.filter(option => 
-      option.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [options, searchTerm]);
-
-  const handleSelect = (option) => {
-    onChange(option);
-    setSearchTerm('');
-    setIsOpen(false);
+// Loading Spinner Component
+const LoadingSpinner = ({ size = "medium", text = "Loading..." }) => {
+  const sizeClasses = {
+    small: "w-4 h-4",
+    medium: "w-6 h-6", 
+    large: "w-8 h-8"
   };
 
   return (
-    <div className={`relative ${className}`}>
-      <div className="relative">
-        <input
-          type="text"
-          value={value || searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder={placeholder}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      </div>
-      
-      {isOpen && (
-        <>
-          <div 
-            className="fixed inset-0 z-10" 
-            onClick={() => setIsOpen(false)}
-          />
-          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-gray-500">No results found</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => handleSelect(option)}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
-                >
-                  {option}
-                </button>
-              ))
-            )}
+    <div className="flex items-center justify-center space-x-2">
+      <Loader2 className={`${sizeClasses[size]} animate-spin text-blue-600`} />
+      <span className="text-gray-600">{text}</span>
+    </div>
+  );
+};
+
+// Download Progress Modal
+const DownloadModal = ({ isOpen, onClose, downloadType, progress }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-[rgb(0,0,0)]/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Download className="w-8 h-8 text-blue-600" />
           </div>
-        </>
-      )}
+          <h3 className="text-lg font-semibold mb-2">Preparing Download</h3>
+          <p className="text-gray-600 mb-4">
+            {downloadType === 'combined' 
+              ? 'Creating combined PDF file...' 
+              : 'Generating individual PDF files and creating ZIP archive...'
+            }
+          </p>
+          <LoadingSpinner size="large" text="Please wait..." />
+          
+          {/* Progress bar placeholder */}
+          <div className="mt-4">
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">{Math.floor(progress)}% complete</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StepIndicator = ({ currentStep, completedSteps }) => {
+  const steps = [
+    { id: 1, title: 'File Type', description: 'Choose format' },
+    { id: 2, title: 'Upload', description: 'Select Excel file' },
+    { id: 3, title: 'Configure', description: 'Select sheets' },
+    { id: 4, title: 'Preview', description: 'View & download' }
+  ];
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between">
+        {steps.map((step, index) => (
+          <React.Fragment key={step.id}>
+            <div className="flex flex-col items-center">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                completedSteps.includes(step.id) 
+                  ? 'bg-green-500 border-green-500 text-white' 
+                  : currentStep === step.id
+                  ? 'bg-blue-500 border-blue-500 text-white'
+                  : 'bg-white border-gray-300 text-gray-500'
+              }`}>
+                {completedSteps.includes(step.id) ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <span className="text-sm font-medium">{step.id}</span>
+                )}
+              </div>
+              <div className="mt-2 text-center">
+                <div className={`text-sm font-medium ${
+                  currentStep >= step.id ? 'text-gray-900' : 'text-gray-500'
+                }`}>
+                  {step.title}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {step.description}
+                </div>
+              </div>
+            </div>
+            {index < steps.length - 1 && (
+              <div className={`flex-1 h-0.5 mx-4 ${
+                completedSteps.includes(step.id) ? 'bg-green-500' : 'bg-gray-200'
+              }`} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 };
@@ -94,12 +123,33 @@ export default function App() {
   const [selectedType, setSelectedType] = useState('ALL'); // 'ALL', 'BK', 'BM', 'KM', 'KK', etc.
   const [selectedId, setSelectedId] = useState('');
   const [pdfUrl, setPdfUrl] = useState(null);
+  
+  // Loading states
   const [loading, setLoading] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [processingSheets, setProcessingSheets] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [downloadModal, setDownloadModal] = useState({ isOpen: false, type: '', progress: 0 });
+
+  const currentStep = useMemo(() => {
+    if (!fileType) return 1;
+    if (!file) return 2;
+    if (selectedSheets.length === 0) return 3;
+    return 4;
+  }, [fileType, file, selectedSheets]);
+
+  const completedSteps = useMemo(() => {
+    const completed = [];
+    if (fileType) completed.push(1);
+    if (file) completed.push(2);
+    if (selectedSheets.length > 0) completed.push(3);
+    return completed;
+  }, [fileType, file, selectedSheets]);
 
   // File type options
   const fileTypeOptions = [
-    { value: 'bank', label: 'Bank Masuk/Bank Keluar', description: '' },
-    { value: 'kas', label: 'Kas Masuk/Kas Keluar', description: '' }
+    { value: 'bank', label: 'Bank Masuk/Bank Keluar', icon: <CreditCard />, description: '' },
+    { value: 'kas', label: 'Kas Masuk/Kas Keluar', icon: <Wallet />, description: '' }
   ];
 
   // Get unique ID prefixes from the IDs based on file type
@@ -142,6 +192,20 @@ export default function App() {
     setPdfUrl(null);
   };
 
+  // Simulate progress for downloads
+  const simulateProgress = (callback) => {
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 15;
+      if (progress >= 95) {
+        progress = 100;
+        clearInterval(interval);
+        setTimeout(callback, 500);
+      }
+      setDownloadModal(prev => ({ ...prev, progress: Math.min(progress, 100) }));
+    }, 200);
+  };
+
   // Get sheet information
   async function getSheetInfo(excelFile) {
     const formData = new FormData();
@@ -149,7 +213,7 @@ export default function App() {
     formData.append('file_type', fileType);
 
     try {
-      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/sheet_info/', {
+      const response = await fetch('http://127.0.0.1:8000/sheet_info/', {
         method: 'POST',
         body: formData,
       });
@@ -172,7 +236,7 @@ export default function App() {
     setIds([]);
     setSheets([]);
     setSelectedSheets([]);
-    setLoading(true);
+    setUploadingFile(true);
 
     try {
       // First get sheet information
@@ -188,32 +252,22 @@ export default function App() {
     } catch (error) {
       console.error('Error processing file:', error);
     } finally {
-      setLoading(false);
+      setUploadingFile(false);
     }
   }
 
   // Process selected sheets to get IDs
   async function processSelectedSheets() {
-    if (!file || selectedSheets.length === 0) return;
-    
-    setLoading(true);
+    if (!file || !selectedSheets.length) return;
+    setProcessingSheets(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('file_type', fileType);
-      formData.append('selected_sheets', JSON.stringify(selectedSheets));
-
-      const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/ids/', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await response.json();
-      setIds(data.ids);
-      setSheets(data.sheets || []);
-    } catch (error) {
-      console.error('Error processing sheets:', error);
+      const { ids, sheets } = await fetchIdsAndSheets(file, fileType, selectedSheets);
+      setIds(ids);
+      setSheets(sheets);
+    } catch (err) {
+      console.error(err);
     } finally {
-      setLoading(false);
+      setProcessingSheets(false);
     }
   }
 
@@ -239,76 +293,80 @@ export default function App() {
     setSelectedSheets([]);
   };
 
-  // Preview selected ID
   async function previewPdf(id) {
-    if (!file || !id || selectedSheets.length === 0) return;
-    setSelectedId(id);
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('id', id);
-    formData.append('file_type', fileType);
-    formData.append('selected_sheets', JSON.stringify(selectedSheets));
-
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/preview/', {
-      method: 'POST',
-      body: formData,
-    });
-    const blob = await response.blob();
-    const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-    const url = URL.createObjectURL(pdfBlob);
-    setPdfUrl(url);
+    if (!file || !id) return;
+    setLoadingPreview(true);
+    try {
+      const blob = await fetchPdfBlob(file, fileType, selectedSheets, id);
+      setPdfUrl(URL.createObjectURL(blob));
+      setSelectedId(id);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingPreview(false);
+    }
   }
 
   // Download all PDFs
   async function downloadAll() {
-    if (!file || selectedSheets.length === 0) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('file_type', fileType);
-    formData.append('selected_sheets', JSON.stringify(selectedSheets));
-
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/generate_all/', {
-      method: 'POST',
-      body: formData,
+    setDownloadModal({ isOpen: true, type: 'zip', progress: 0 });
+    
+    simulateProgress(async () => {
+      try {
+        const blob = await downloadBlob('generate_all/', file, fileType, selectedSheets);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_All_Files.zip`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setDownloadModal({ isOpen: false, type: '', progress: 0 });
+      }
     });
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_All_Files.zip`;
-    link.click();
   }
 
   async function downloadAllAsOneFile() {
     if (!file || selectedSheets.length === 0) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('file_type', fileType);
-    formData.append('selected_sheets', JSON.stringify(selectedSheets));
+    setDownloadModal({ isOpen: true, type: 'combined', progress: 0 });
+    
+    simulateProgress(async () => {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('file_type', fileType);
+        formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-    const response = await fetch('https://bank-api-500646603571.asia-southeast1.run.app/download_combined/', {
-      method: 'POST',
-      body: formData,
+        const response = await fetch('http://127.0.0.1:8000/download_combined/', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          console.error('Download failed:', response.statusText);
+          return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_Combined_File.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setDownloadModal({ isOpen: false, type: '', progress: 0 });
+      }
     });
-    if (!response.ok) {
-      console.error('Download failed:', response.statusText);
-      return;
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${fileType === 'kas' ? 'KM_KK' : 'BK'}_Combined_File.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    URL.revokeObjectURL(url);
   }
 
   // Handle type change and reset selected ID
@@ -319,263 +377,420 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 w-full">
-      <div className="w-full bg-white rounded-xl shadow-md overflow-visible">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 overflow-visible">
+      <div className="container mx-auto px-4 py-8 max-w-6xl overflow-visible">
         {/* Header */}
-        <header className="px-6 py-4 border-b border-gray-200">
-          <h1 className="text-2xl font-semibold text-gray-800">
-            Excel to PDF
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
+            <FileText className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Excel to PDF Converter
           </h1>
-          <p className="text-gray-600 mt-1">
-            Upload Excel convert to PDFs.
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Transform your Excel files into professional PDF documents with ease. 
+            Support for both bank and cash transaction formats.
           </p>
-        </header>
+        </div>
 
-        {/* Content */}
-        <main className="p-6 space-y-6 w-full">
-          {/* File Type Selection */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h3 className="font-medium text-gray-800 mb-3">Select File Type:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {fileTypeOptions.map((option) => (
-                <label 
-                  key={option.value}
-                  className={`flex items-start p-4 rounded-lg border-2 cursor-pointer transition ${
-                    fileType === option.value
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="fileType"
-                    value={option.value}
-                    checked={fileType === option.value}
-                    onChange={(e) => handleFileTypeChange(e.target.value)}
-                    className="mt-1 mr-3"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-800">{option.label}</div>
-                    <div className="text-sm text-gray-600 mt-1">{option.description}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
+        {/* Step Indicator */}
+        <StepIndicator currentStep={currentStep} completedSteps={completedSteps} />
 
-          {/* File Upload */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <input
-              id="file-input"
-              type="file"
-              accept=".xlsx"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={loading}
-            />
-            <label
-              htmlFor="file-input"
-              className={`px-4 py-2 rounded-lg shadow transition ${
-                loading 
-                  ? 'bg-gray-400 text-white cursor-not-allowed' 
-                  : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-700'
-              }`}
-            >
-              {loading ? 'Processing...' : `Upload ${fileType === 'kas' ? 'Kas' : 'Bank'} Excel File`}
-            </label>
-            {file && (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <span className="text-gray-600 truncate">{file.name}</span>
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  {fileType === 'kas' ? 'Kas Format' : 'Bank Format'}
-                </span>
-              </div>
-            )}
-            {ids.length > 0 && (
-              <>
-                <button
-                  onClick={downloadAllAsOneFile}
-                  disabled={selectedSheets.length === 0}
-                  className={`ml-auto px-4 py-2 rounded-lg shadow transition ${
-                    selectedSheets.length === 0
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700'
-                  }`}
-                >
-                  Download All as One File
-                </button>
-                <button
-                  onClick={downloadAll}
-                  disabled={selectedSheets.length === 0}
-                  className={`ml-auto px-4 py-2 rounded-lg shadow transition ${
-                    selectedSheets.length === 0
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700'
-                  }`}
-                >
-                  Download All PDFs
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Sheet Selection */}
-          {availableSheets.length > 0 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-gray-800">Select Sheets to Process:</h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={selectAllSheets}
-                    className="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    onClick={deselectAllSheets}
-                    className="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
-                  >
-                    Deselect All
-                  </button>
+        {/* Main Content */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-visible">
+          <div className="p-8 space-y-8">
+            
+            {/* Step 1: File Type Selection */}
+            <div className={`transition-all duration-300 ${currentStep >= 1 ? 'opacity-100' : 'opacity-50'}`}>
+              <div className="flex items-center mb-6">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-blue-600 font-semibold">1</span>
                 </div>
+                <h2 className="text-xl font-semibold text-gray-900">Choose File Type</h2>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {availableSheets.map((sheet) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {fileTypeOptions.map((option) => (
                   <label 
-                    key={sheet.name}
-                    className={`flex items-center p-3 rounded-lg border-2 cursor-pointer transition ${
-                      selectedSheets.includes(sheet.name)
-                        ? 'border-blue-500 bg-blue-50'
-                        : sheet.status === 'readable'
-                        ? 'border-gray-200 bg-white hover:border-gray-300'
-                        : 'border-red-200 bg-red-50 cursor-not-allowed'
+                    key={option.value}
+                    className={`group relative p-6 rounded-xl border-2 cursor-pointer transition-all ${
+                      fileType === option.value
+                        ? 'border-blue-500 bg-blue-50 shadow-md'
+                        : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
                     }`}
                   >
                     <input
-                      type="checkbox"
-                      checked={selectedSheets.includes(sheet.name)}
-                      onChange={() => handleSheetToggle(sheet.name)}
-                      disabled={sheet.status !== 'readable'}
-                      className="mr-3"
+                      type="radio"
+                      name="fileType"
+                      value={option.value}
+                      checked={fileType === option.value}
+                      onChange={(e) => handleFileTypeChange(e.target.value)}
+                      className="sr-only"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium text-sm text-gray-800">{sheet.name}</div>
-                      <div className={`text-xs ${
-                        sheet.status === 'readable' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {sheet.status === 'readable' ? 'Ready' : `Error: ${sheet.error}`}
+                    <div className="flex items-start">
+                      <div className="text-3xl mr-4">{option.icon}</div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 mb-1">{option.label}</div>
+                        <div className="text-sm text-gray-600">{option.description}</div>
                       </div>
+                      {fileType === option.value && (
+                        <div className="absolute top-4 right-4">
+                          <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                            <Check className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </label>
                 ))}
               </div>
-              
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-sm text-gray-600">
-                  {selectedSheets.length} of {availableSheets.length} sheets selected
-                </span>
-                <button
-                  onClick={processSelectedSheets}
-                  disabled={selectedSheets.length === 0 || loading}
-                  className={`px-4 py-2 rounded-lg shadow transition ${
-                    selectedSheets.length === 0 || loading
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  {loading ? 'Processing...' : 'Process Selected Sheets'}
-                </button>
+            </div>
+
+            {/* Step 2: File Upload */}
+            <div className={`transition-all duration-300 ${currentStep >= 2 ? 'opacity-100' : 'opacity-50'}`}>
+              <div className="flex items-center mb-6">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-blue-600 font-semibold">2</span>
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Upload Excel File</h2>
+              </div>
+
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors">
+                <input
+                  id="file-input"
+                  type="file"
+                  accept=".xlsx"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  disabled={uploadingFile}
+                />
+                
+                {!file ? (
+                  <label htmlFor="file-input" className={`cursor-pointer ${uploadingFile ? 'pointer-events-none' : ''}`}>
+                    <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <div className="text-lg font-medium text-gray-900 mb-2">
+                      Drop your Excel file here or click to browse
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Supports .xlsx files up to 10MB
+                    </div>
+                    <div className="mt-4">
+                      <span className={`inline-flex items-center px-4 py-2 rounded-lg transition-colors ${
+                        uploadingFile 
+                          ? 'bg-gray-400 text-white cursor-not-allowed' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}>
+                        {uploadingFile ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Select File
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </label>
+                ) : (
+                  <div className="text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
+                      <FileText className="w-8 h-8 text-green-600" />
+                    </div>
+                    <div className="font-medium text-gray-900 mb-2">{file.name}</div>
+                    <div className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                      {fileType === 'kas' ? 'Cash Format' : 'Bank Format'}
+                    </div>
+                    {uploadingFile && (
+                      <div className="mt-4">
+                        <LoadingSpinner text="Analyzing file structure..." />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-          )}
 
-          {/* Sheet Information */}
-          {sheets.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="font-medium text-blue-800 mb-2">Processed Sheets:</h3>
-              <div className="flex flex-wrap gap-2">
-                {sheets.map((sheet) => (
-                  <span 
-                    key={sheet.name}
-                    className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
-                  >
-                    {sheet.name} ({sheet.count} records)
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Type Filter and ID Selector */}
-          {ids.length > 0 && (
-            <div className="space-y-4">
-              {/* Type Filter */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <label className="text-gray-700 font-medium">Filter by Type:</label>
-                <div className="flex flex-wrap gap-2">
-                  {availableTypes.map((type) => (
+            {/* Step 3: Sheet Selection */}
+            {availableSheets.length > 0 && (
+              <div className={`transition-all duration-300 ${currentStep >= 3 ? 'opacity-100' : 'opacity-50'}`}>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-blue-600 font-semibold">3</span>
+                    </div>
+                    <h2 className="text-xl font-semibold text-gray-900">Configure Sheets</h2>
+                  </div>
+                  <div className="flex items-center space-x-2">
                     <button
-                      key={type}
-                      onClick={() => handleTypeChange(type)}
-                      className={`px-4 py-2 rounded-lg border transition ${
-                        selectedType === type
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
+                      onClick={selectAllSheets}
+                      disabled={processingSheets}
+                      className="text-sm px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors disabled:opacity-50"
                     >
-                      {type}
+                      Select All
                     </button>
+                    <button
+                      onClick={deselectAllSheets}
+                      disabled={processingSheets}
+                      className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {availableSheets.map((sheet) => (
+                    <label 
+                      key={sheet.name}
+                      className={`relative p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        selectedSheets.includes(sheet.name)
+                          ? 'border-blue-500 bg-blue-50'
+                          : sheet.status === 'readable'
+                          ? 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                          : 'border-red-200 bg-red-50 cursor-not-allowed'
+                      } ${processingSheets ? 'pointer-events-none opacity-50' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSheets.includes(sheet.name)}
+                        onChange={() => handleSheetToggle(sheet.name)}
+                        disabled={sheet.status !== 'readable' || processingSheets}
+                        className="sr-only"
+                      />
+                      
+                      <div className="flex items-start">
+                        <div className={`w-5 h-5 rounded border-2 mr-3 mt-0.5 flex items-center justify-center ${
+                          selectedSheets.includes(sheet.name)
+                            ? 'bg-blue-500 border-blue-500'
+                            : 'border-gray-300'
+                        }`}>
+                          {selectedSheets.includes(sheet.name) && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 truncate">{sheet.name}</div>
+                          <div className={`text-xs mt-1 flex items-center ${
+                            sheet.status === 'readable' ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {sheet.status === 'readable' ? (
+                              <>
+                                <Check className="w-3 h-3 mr-1" />
+                                Ready to process
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-3 h-3 mr-1" />
+                                {sheet.error}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
                   ))}
                 </div>
-                <span className="text-sm text-gray-500">
-                  ({filteredIds.length} items)
-                </span>
-              </div>
-
-              {/* ID Selector */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <label className="text-gray-700 font-medium w-full sm:w-auto">
-                  Select {selectedType === 'ALL' ? 'Transaction' : selectedType} ID:
-                </label>
-                <SearchableDropdown
-                  options={filteredIds}
-                  value={selectedId}
-                  onChange={previewPdf}
-                  placeholder={`Search ${selectedType === 'ALL' ? 'transaction' : selectedType} IDs...`}
-                  className="w-full sm:w-2/3"
-                />
-              </div>
-
-              {/* Selected ID Display */}
-              {selectedId && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <span className="text-blue-800 font-medium">
-                    Selected: {selectedId}
+                
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-600">
+                    {selectedSheets.length} of {availableSheets.length} sheets selected
                   </span>
+                  <button
+                    onClick={processSelectedSheets}
+                    disabled={selectedSheets.length === 0 || processingSheets}
+                    className={`px-6 py-2 rounded-lg font-medium transition-colors flex items-center ${
+                      selectedSheets.length === 0 || processingSheets
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {processingSheets ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Process Selected Sheets'
+                    )}
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* PDF Preview */}
-          {pdfUrl && (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <PdfPreview url={pdfUrl} />
-              <div className="p-4 bg-gray-50 text-right">
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                >
-                  Open in New Tab
-                </a>
               </div>
-            </div>
-          )}
-        </main>
+            )}
+
+            {/* Processed Sheets Info */}
+            {sheets.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center mb-2">
+                  <Check className="w-5 h-5 text-green-600 mr-2" />
+                  <h3 className="font-medium text-green-800">Successfully Processed</h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {sheets.map((sheet) => (
+                    <span 
+                      key={sheet.name}
+                      className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm"
+                    >
+                      {sheet.name} ({sheet.count} records)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Preview and Download */}
+            {ids.length > 0 && (
+              <div className={`transition-all duration-300 ${currentStep >= 4 ? 'opacity-100' : 'opacity-50'}`}>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-blue-600 font-semibold">4</span>
+                    </div>
+                    <h2 className="text-xl font-semibold text-gray-900">Preview & Download</h2>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={downloadAllAsOneFile}
+                      disabled={selectedSheets.length === 0 || downloadModal.isOpen}
+                      className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                        selectedSheets.length === 0 || downloadModal.isOpen
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {downloadModal.isOpen && downloadModal.type === 'combined' ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-2" />
+                      )}
+                      Combined PDF
+                    </button>
+                    <button
+                      onClick={downloadAll}
+                      disabled={selectedSheets.length === 0 || downloadModal.isOpen}
+                      className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                        selectedSheets.length === 0 || downloadModal.isOpen
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {downloadModal.isOpen && downloadModal.type === 'zip' ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-2" />
+                      )}
+                      All PDFs (ZIP)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter and Preview Section */}
+                <div className="space-y-6">
+                  {/* Type Filter */}
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <Filter className="w-4 h-4 text-gray-500 mr-2" />
+                      <span className="text-sm font-medium text-gray-700">Filter:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableTypes.map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => handleTypeChange(type)}
+                          disabled={loadingPreview}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                            selectedType === type
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          } ${loadingPreview ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                      {filteredIds.length} items
+                    </span>
+                  </div>
+
+                  {/* ID Selector */}
+                  <div className="flex items-center space-x-4 overflow-visible">
+                    <div className="flex items-center">
+                      <Search className="w-4 h-4 text-gray-500 mr-2" />
+                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                        Select ID:
+                      </span>
+                    </div>
+                    <div className="flex-1 max-w-md relative">
+                      <SearchableDropdown
+                        options={filteredIds}
+                        value={selectedId}
+                        onChange={previewPdf}
+                        placeholder={`Search ${selectedType === 'ALL' ? 'transaction' : selectedType} IDs...`}
+                        className="w-full"
+                        disabled={loadingPreview}
+                      />
+                      {loadingPreview && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Loading Preview State */}
+                  {loadingPreview && selectedId && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <LoadingSpinner text={`Loading preview for ${selectedId}...`} />
+                    </div>
+                  )}
+
+                  {/* Selected ID Display */}
+                  {selectedId && !loadingPreview && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center">
+                        <FileText className="w-4 h-4 text-blue-600 mr-2" />
+                        <span className="text-blue-800 font-medium">
+                          Currently viewing: {selectedId}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PDF Preview */}
+                  {pdfUrl && !loadingPreview && (
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <PdfPreview url={pdfUrl} />
+                      <div className="p-4 bg-gray-50 flex justify-between items-center">
+                        <span className="text-sm text-gray-600">PDF Preview</span>
+                        <a
+                          href={pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                        >
+                          Open in New Tab →
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Download Modal */}
+      <DownloadModal 
+        isOpen={downloadModal.isOpen}
+        onClose={() => setDownloadModal({ isOpen: false, type: '', progress: 0 })}
+        downloadType={downloadModal.type}
+        progress={downloadModal.progress}
+      />
     </div>
   );
 }
