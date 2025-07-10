@@ -213,7 +213,7 @@ export default function App() {
     formData.append('file_type', fileType);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/sheet_info/', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/sheet_info/`, {
         method: 'POST',
         body: formData,
       });
@@ -340,7 +340,7 @@ export default function App() {
         formData.append('file_type', fileType);
         formData.append('selected_sheets', JSON.stringify(selectedSheets));
 
-        const response = await fetch('http://127.0.0.1:8000/download_combined/', {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/download_combined/`, {
           method: 'POST',
           body: formData,
         });
