@@ -1,6 +1,25 @@
 // functions.js
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000';
 
+export async function downloadByType(file, fileType, selectedSheets, idType) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('file_type', fileType);
+  formData.append('selected_sheets', JSON.stringify(selectedSheets));
+  formData.append('id_type', idType);
+
+  const response = await fetch(`${API_BASE}/download_by_type/`, {
+    method: 'POST',
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.statusText}`);
+  }
+  
+  return response.blob();
+}
+
 export async function getSheetInfo(fileType, excelFile) {
   const form = new FormData();
   form.append('file', excelFile);

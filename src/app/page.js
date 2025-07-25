@@ -31,6 +31,17 @@ const LoadingSpinner = ({ size = "medium", text = "Loading..." }) => {
 const DownloadModal = ({ isOpen, onClose, downloadType, progress }) => {
   if (!isOpen) return null;
 
+  const getModalText = () => {
+    switch(downloadType) {
+      case 'combined':
+        return 'Creating combined PDF file...';
+      case 'by_type':
+        return 'Generating combined PDF for selected type...'; // Updated text
+      default:
+        return 'Generating individual PDF files and creating ZIP archive...';
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-[rgb(0,0,0)]/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
@@ -40,10 +51,7 @@ const DownloadModal = ({ isOpen, onClose, downloadType, progress }) => {
           </div>
           <h3 className="text-lg font-semibold mb-2">Preparing Download</h3>
           <p className="text-gray-600 mb-4">
-            {downloadType === 'combined' 
-              ? 'Creating combined PDF file...' 
-              : 'Generating individual PDF files and creating ZIP archive...'
-            }
+            {getModalText()}
           </p>
           <LoadingSpinner size="large" text="Please wait..." />
           
@@ -114,6 +122,8 @@ const StepIndicator = ({ currentStep, completedSteps }) => {
 };
 
 export default function App() {
+  // Add this to your existing state declarations
+  const [downloadType, setDownloadType] = useState('all'); // 'all', 'by_type', 'combined'
   const [file, setFile] = useState(null);
   const [fileType, setFileType] = useState('bank'); // 'bank' or 'kas'
   const [ids, setIds] = useState([]);
@@ -307,6 +317,42 @@ export default function App() {
     }
   }
 
+  async function downloadByTypeHandler(idType) {
+    setDownloadModal({ isOpen: true, type: 'by_type', progress: 0 });
+    
+    simulateProgress(async () => {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('file_type', fileType);
+        formData.append('selected_sheets', JSON.stringify(selectedSheets));
+        formData.append('id_type', idType);
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/download_by_type/`, {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          console.error('Download failed:', response.statusText);
+          return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        // Updated filename to reflect it's a combined PDF, not ZIP
+        link.download = `${fileType}_${idType}_Combined.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setDownloadModal({ isOpen: false, type: '', progress: 0 });
+      }
+    });
+  }
   // Download all PDFs
   async function downloadAll() {
     setDownloadModal({ isOpen: true, type: 'zip', progress: 0 });
@@ -644,46 +690,109 @@ export default function App() {
             {/* Step 4: Preview and Download */}
             {ids.length > 0 && (
               <div className={`transition-all duration-300 ${currentStep >= 4 ? 'opacity-100' : 'opacity-50'}`}>
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-blue-600 font-semibold">4</span>
+                {/* Enhanced Download Section */}
+                <div className="flex flex-col space-y-4 mb-4">
+                  {/* Download Options */}
+                  <div className="flex items-center space-x-4">
+                    <span className="text-sm font-medium text-gray-700">Download Options:</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setDownloadType('combined')}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          downloadType === 'combined'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        Combined PDF
+                      </button>
+                      <button
+                        onClick={() => setDownloadType('all')}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          downloadType === 'all'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        All PDFs (ZIP)
+                      </button>
+                      <button
+                        onClick={() => setDownloadType('by_type')}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          downloadType === 'by_type'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        By Type (PDF) {/* Updated text */}
+                      </button>
                     </div>
-                    <h2 className="text-xl font-semibold text-gray-900">Preview & Download</h2>
                   </div>
+
+                  {/* Download Buttons */}
                   <div className="flex items-center space-x-3">
-                    <button
-                      onClick={downloadAllAsOneFile}
-                      disabled={selectedSheets.length === 0 || downloadModal.isOpen}
-                      className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                        selectedSheets.length === 0 || downloadModal.isOpen
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {downloadModal.isOpen && downloadModal.type === 'combined' ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4 mr-2" />
-                      )}
-                      Combined PDF
-                    </button>
-                    <button
-                      onClick={downloadAll}
-                      disabled={selectedSheets.length === 0 || downloadModal.isOpen}
-                      className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                        selectedSheets.length === 0 || downloadModal.isOpen
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {downloadModal.isOpen && downloadModal.type === 'zip' ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4 mr-2" />
-                      )}
-                      All PDFs (ZIP)
-                    </button>
+                    {downloadType === 'combined' && (
+                      <button
+                        onClick={downloadAllAsOneFile}
+                        disabled={selectedSheets.length === 0 || downloadModal.isOpen}
+                        className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                          selectedSheets.length === 0 || downloadModal.isOpen
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {downloadModal.isOpen && downloadModal.type === 'combined' ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4 mr-2" />
+                        )}
+                        Download Combined PDF
+                      </button>
+                    )}
+
+                    {downloadType === 'all' && (
+                      <button
+                        onClick={downloadAll}
+                        disabled={selectedSheets.length === 0 || downloadModal.isOpen}
+                        className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                          selectedSheets.length === 0 || downloadModal.isOpen
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {downloadModal.isOpen && downloadModal.type === 'zip' ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4 mr-2" />
+                        )}
+                        Download All PDFs (ZIP)
+                      </button>
+                    )}
+
+                    {downloadType === 'by_type' && (
+                      <div className="flex flex-wrap gap-2">
+                        {availableTypes.map((type) => (
+                          <button
+                            key={type}
+                            onClick={() => downloadByTypeHandler(type)}
+                            disabled={selectedSheets.length === 0 || downloadModal.isOpen}
+                            className={`inline-flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                              selectedSheets.length === 0 || downloadModal.isOpen
+                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {downloadModal.isOpen && downloadModal.type === 'by_type' ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            {/* Updated text to reflect combined PDF */}
+                            {type === 'ALL' ? 'All Types PDF' : `${type} Combined PDF`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
